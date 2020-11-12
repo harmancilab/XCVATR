@@ -1,6 +1,5 @@
 
 <font face="arial">
-<div style="text-align:center"><img src="episafari_logo.png" alt="Could not load logo." width="800" align="center"></div>
 <h1>XCVATR</h1>
 XCVATR is a command line tool for analyzing distribution of variants in bulk and single cell RNA-sequencing datasets.<br><br>
 
