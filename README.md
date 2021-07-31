@@ -44,7 +44,9 @@ XCVATR can be used to generate embeddings for bulk and single cell RNA-seq datas
 
 ## Example: Darmanis et al. 2016 ##
 
-We generated an example file from chromosome 17 of the Darmanis et al. 2016 study. This file contains the bam file that is used to identify variants and score clumps. The complete workflow is implemented under the script named RUN_EXAMPLE.sh. We also provide an example "data_config.params" file that needs to be set before running XCVATR.
+We generated an example file from chromosome 17 of the Darmanis et al. 2016 study. The example data can be downloaded from [here](https://drive.google.com/file/d/17dqwz0rPVl2swJbn-Cd6SzMXbG2p0dKk/view?usp=sharing). 
+
+This file contains the bam file that is used to identify variants and score clumps. The complete workflow is implemented under the script named RUN_EXAMPLE.sh. We also provide an example "data_config.params" file that needs to be set before running XCVATR.
 
 We go over the commands to perform the clump analysis and visualization. For this analysis, we use the "XCVATR_SC_SNV_Indel_Pipeline.sh" script under "scripts/" directory.
 
