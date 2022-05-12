@@ -121,6 +121,17 @@ void analyze_pairwise_variant_spatial_co_occurence(char* per_sample_spatial_coor
 
 void gene_level_summarize_annotated_variant_allele_counts_per_max_AF(char* annotated_per_variant_allelic_counts_BED_fp, double min_total_covg_per_summarized_var, char* gene_summarized_allele_counts_op_fp);
 
+void variant_set_summarize_variant_allele_counts_per_variant_count(char* per_variant_allelic_counts_BED_fp,
+	char* filtering_var_regs_BED_fp,
+	double min_total_covg_per_summarized_var,
+	double min_alt_AF_per_counted_var,
+	char* variant_level_summarized_allele_counts_op_fp);
+
+void variant_set_summarize_variant_allele_counts_per_max_AF(char* per_variant_allelic_counts_BED_fp,
+	char* filtering_var_regs_BED_fp,
+	double min_total_covg_per_summarized_var,
+	char* variant_level_summarized_allele_counts_op_fp);
+
 void gene_level_summarize_annotated_variant_allele_counts_per_max_impact(char* annotated_per_variant_allelic_counts_BED_fp,
 	char* impact_score_list_fp,
 	double min_total_covg_per_summarized_var,

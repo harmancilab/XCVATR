@@ -266,6 +266,7 @@ void dump_inter_region_distances(vector<t_annot_region*>* annot_regions1,
 // Necessary for fast comparison of the regions.
 bool sort_regions_per_start_end_name(t_annot_region* region1, t_annot_region* region2);
 bool sort_regions_per_name(t_annot_region* region1, t_annot_region* region2);
+bool sort_regions_per_name_prefix(t_annot_region* region1, t_annot_region* region2);
 bool sort_regions(t_annot_region* region1, t_annot_region* region2);
 bool sort_regions_per_increasing_length(t_annot_region* region1, t_annot_region* region2);
 bool sort_regions_per_decreasing_length(t_annot_region* region1, t_annot_region* region2);

@@ -1969,6 +1969,127 @@ void generate_variant_score_matrix_per_pooled_variants(char* pooled_variants_fil
 	fclose(f_op);
 }
 
+void variant_set_summarize_variant_allele_counts_per_max_AF(char* per_variant_allelic_counts_BED_fp,
+	char* filtering_var_regs_BED_fp,
+	double min_total_covg_per_summarized_var,
+	char* variant_level_summarized_allele_counts_op_fp)
+{
+	fprintf(stderr, "Variant-level pooling and summarizing variants with minimum of %d coverage.\n", (int)min_total_covg_per_summarized_var);
+	vector<t_annot_region*>* allele_count_regions = load_BED_with_line_information(per_variant_allelic_counts_BED_fp);
+	vector<char*>* allele_count_sample_ids = new vector<char*>();
+	FILE* f_allelic_counts_BED = open_f(per_variant_allelic_counts_BED_fp, "r");
+	char* header_line = getline(f_allelic_counts_BED);
+	close_f(f_allelic_counts_BED, per_variant_allelic_counts_BED_fp);
+
+	t_string_tokens* toks = t_string::tokenize_by_chars(header_line, "\t");
+	for (int i_tok = 4; i_tok < toks->size(); i_tok++)
+	{
+		allele_count_sample_ids->push_back(t_string::copy_me_str(toks->at(i_tok)->str()));
+	} // i_tok loop
+
+	delete[] header_line;
+	delete(toks);
+
+	vector<t_annot_region*>* filtering_var_regs = load_BED(filtering_var_regs_BED_fp);
+	fprintf(stderr, "Loaded %d annotated variant regions and %d filtering variant regions.\n", allele_count_regions->size(), filtering_var_regs->size());
+
+	vector<t_annot_region*>* intersects = intersect_annot_regions(allele_count_regions, filtering_var_regs, false);
+
+	vector<char*>* per_sample_summarized_allele_count_strs = new vector<char*>();
+	for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+	{
+		char* cur_sample_allele_cnt_str = t_string::copy_me_str("0 0");
+		per_sample_summarized_allele_count_strs->push_back(cur_sample_allele_cnt_str);
+	} // i_s loop.
+
+	fprintf(stderr, "Summarizing %d intersecting regions.\n", intersects->size());
+	for (int i_int = 0; i_int < intersects->size(); i_int++)
+	{
+		t_intersect_info* int_info = (t_intersect_info*)(intersects->at(i_int)->data);
+		t_annot_region* cur_allele_cnt_reg = int_info->src_reg;
+		char* count_line = (char*)(cur_allele_cnt_reg->data);
+
+		char col_buff[1000];
+		int i_cur_char = 0;
+
+		// Read the locus and name.
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+
+		for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+		{
+			if (!t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char))
+			{
+				fprintf(stderr, "Could not read %d. sample's read counts.\n", i_s);
+				exit(0);
+			}
+
+			double cur_ref_allele_cnt = 0;
+			double cur_alt_allele_cnt = 0;
+			if (sscanf(col_buff, "%lf %lf", &cur_ref_allele_cnt, &cur_alt_allele_cnt) != 2)
+			{
+				fprintf(stderr, "Could not parse %d. samples from: %s\n", i_s, count_line);
+				exit(0);
+			}
+
+			double ref_allele_cnt_so_far = 0;
+			double alt_allele_cnt_so_far = 0;
+			if (sscanf(per_sample_summarized_allele_count_strs->at(i_s), "%lf %lf", &ref_allele_cnt_so_far, &alt_allele_cnt_so_far) != 2)
+			{
+				fprintf(stderr, "Could not parse the allele counts (so far) for %d. sample: %s\n", i_s, per_sample_summarized_allele_count_strs->at(i_s));
+				exit(0);
+			}
+
+			double cur_AF = -1;
+			double cur_total_covg = (cur_alt_allele_cnt + cur_ref_allele_cnt);
+			if (cur_total_covg > 0)
+			{
+				cur_AF = cur_alt_allele_cnt / (cur_alt_allele_cnt + cur_ref_allele_cnt);
+			}
+
+			double AF_so_far = -1;
+			if (alt_allele_cnt_so_far > 0)
+			{
+				AF_so_far = alt_allele_cnt_so_far / (alt_allele_cnt_so_far + ref_allele_cnt_so_far);
+			}
+			
+			if (cur_AF > AF_so_far &&
+				cur_total_covg > min_total_covg_per_summarized_var)
+			{
+				char new_allele_cnt_str[100];
+				sprintf(new_allele_cnt_str, "%.0f %.0f", cur_ref_allele_cnt, cur_alt_allele_cnt);
+				per_sample_summarized_allele_count_strs->at(i_s) = t_string::copy_me_str(new_allele_cnt_str);
+			}
+		} // i_s loop.
+	} // i_int loop.
+
+	// Open the summarized output file, write sample ids.
+	fprintf(stderr, "Saving summarized regions.\n");
+	FILE* f_summarized_op = open_f(variant_level_summarized_allele_counts_op_fp, "w");
+	fprintf(f_summarized_op, "#CHROM\tSTART\tEND\tREF_ALT");
+	for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+	{
+		fprintf(f_summarized_op, "\t%s", allele_count_sample_ids->at(i_s));
+	} // i_s loop.
+	fprintf(f_summarized_op, "\n");
+
+	fprintf(f_summarized_op, "%s\t%d\t%d\t%s",
+		allele_count_regions->at(0)->chrom,
+		translate_coord(allele_count_regions->at(0)->start, CODEBASE_COORDS::start_base, BED_COORDS::start_base),
+		translate_coord(allele_count_regions->at(0)->end, CODEBASE_COORDS::end_base, BED_COORDS::end_base),
+		allele_count_regions->at(0)->name);
+
+	for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+	{
+		fprintf(f_summarized_op, "\t%s", per_sample_summarized_allele_count_strs->at(i_s));
+	} // i_s loop.
+
+	fprintf(f_summarized_op, "\n");
+	close_f(f_summarized_op, variant_level_summarized_allele_counts_op_fp);
+} // variant_level_set_summarize_annotated_variant_allele_counts_per_max_AF
+
 void gene_level_summarize_annotated_variant_allele_counts_per_max_impact(char* annotated_per_variant_allelic_counts_BED_fp, 
 	char* impact_score_list_fp,
 	double min_total_covg_per_summarized_var, 
@@ -2310,6 +2431,138 @@ void gene_level_summarize_annotated_variant_allele_counts_per_max_impact(char* a
 	close_f(f_op, gene_summarized_allele_counts_op_fp);
 	close_f(f_n_summarized_vars_op, n_summarized_vars_op_fp);
 }
+
+void variant_set_summarize_variant_allele_counts_per_variant_count(char* per_variant_allelic_counts_BED_fp,
+	char* filtering_var_regs_BED_fp,
+	double min_total_covg_per_summarized_var,
+	double min_alt_AF_per_counted_var,
+	char* variant_level_summarized_allele_counts_op_fp)
+{
+	fprintf(stderr, "Variant-level pooling and summarizing variants with minimum of %d coverage and reporting the variant count over the variants.\n", (int)min_total_covg_per_summarized_var);
+	vector<t_annot_region*>* allele_count_regions = load_BED_with_line_information(per_variant_allelic_counts_BED_fp);
+	vector<char*>* allele_count_sample_ids = new vector<char*>();
+	FILE* f_allelic_counts_BED = open_f(per_variant_allelic_counts_BED_fp, "r");
+	char* header_line = getline(f_allelic_counts_BED);
+	close_f(f_allelic_counts_BED, per_variant_allelic_counts_BED_fp);
+
+	t_string_tokens* toks = t_string::tokenize_by_chars(header_line, "\t");
+	for (int i_tok = 4; i_tok < toks->size(); i_tok++)
+	{
+		allele_count_sample_ids->push_back(t_string::copy_me_str(toks->at(i_tok)->str()));
+	} // i_tok loop
+
+	fprintf(stderr, "Found %d samples in allele count file.\n", allele_count_sample_ids->size());
+
+	delete[] header_line;
+	delete(toks);
+
+	vector<t_annot_region*>* filtering_var_regs = load_BED(filtering_var_regs_BED_fp);
+	fprintf(stderr, "Loaded %d annotated variant regions and %d filtering variant regions.\n", allele_count_regions->size(), filtering_var_regs->size());
+
+	vector<t_annot_region*>* intersects = intersect_annot_regions(allele_count_regions, filtering_var_regs, true);
+
+	vector<char*>* per_sample_summarized_allele_count_strs = new vector<char*>();
+	for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+	{
+		char* cur_sample_allele_cnt_str = t_string::copy_me_str("0 0");
+		per_sample_summarized_allele_count_strs->push_back(cur_sample_allele_cnt_str);
+	} // i_s loop.
+
+	fprintf(stderr, "Summarizing %d intersecting regions.\n", intersects->size());
+	for (int i_int = 0; i_int < intersects->size(); i_int++)
+	{
+		t_intersect_info* int_info = (t_intersect_info*)(intersects->at(i_int)->data);
+		t_annot_region* cur_allele_cnt_reg = int_info->src_reg;
+		char* count_line = (char*)(cur_allele_cnt_reg->data);
+
+		// Start and end must match exactly.
+		if (int_info->src_reg->start == int_info->dest_reg->start &&
+			int_info->src_reg->end == int_info->dest_reg->end)
+		{
+		}
+		else
+		{
+			continue;
+		}
+
+		char col_buff[1000];
+		int i_cur_char = 0;
+
+		// Read the locus and name.
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+		t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+
+		for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+		{
+			t_string::get_next_token(count_line, col_buff, 1000, "\t", i_cur_char);
+
+			double cur_ref_allele_cnt = 0;
+			double cur_alt_allele_cnt = 0;
+			if (sscanf(col_buff, "%lf %lf", &cur_ref_allele_cnt, &cur_alt_allele_cnt) != 2)
+			{
+				fprintf(stderr, "Could not parse %d. samples from: %s\n", i_s, count_line);
+				exit(0);
+			}
+
+			double ref_allele_cnt_so_far = 0;
+			double alt_allele_cnt_so_far = 0;
+			if (sscanf(per_sample_summarized_allele_count_strs->at(i_s), "%lf %lf", &ref_allele_cnt_so_far, &alt_allele_cnt_so_far) != 2)
+			{
+				fprintf(stderr, "Could not parse the allele counts (so far) for %d. sample: %s\n", i_s, per_sample_summarized_allele_count_strs->at(i_s));
+				exit(0);
+			}
+
+			double cur_AF = cur_alt_allele_cnt / (cur_alt_allele_cnt + cur_ref_allele_cnt);
+			double AF_so_far = alt_allele_cnt_so_far / (alt_allele_cnt_so_far + ref_allele_cnt_so_far);
+
+			double cur_total_covg = (cur_alt_allele_cnt + cur_ref_allele_cnt);
+			if (cur_total_covg > min_total_covg_per_summarized_var &&
+				cur_AF > min_alt_AF_per_counted_var)
+			{
+				// Update the count.
+				ref_allele_cnt_so_far = (double)(filtering_var_regs->size());
+				alt_allele_cnt_so_far += 1;
+
+				char new_allele_cnt_str[100];
+				sprintf(new_allele_cnt_str, "%.0f %.0f", ref_allele_cnt_so_far, alt_allele_cnt_so_far);
+				per_sample_summarized_allele_count_strs->at(i_s) = t_string::copy_me_str(new_allele_cnt_str);
+			}
+		} // i_s loop.
+	} // i_int loop.
+
+	// Open the summarized output file, write sample ids.
+	fprintf(stderr, "Saving summarized regions.\n");
+	FILE* f_summarized_op = open_f(variant_level_summarized_allele_counts_op_fp, "w");
+	fprintf(f_summarized_op, "#CHROM\tSTART\tEND\tREF_ALT");
+	for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+	{
+		fprintf(f_summarized_op, "\t%s", allele_count_sample_ids->at(i_s));
+	} // i_s loop.
+	fprintf(f_summarized_op, "\n");
+
+	fprintf(f_summarized_op, "%s\t%d\t%d\tRef Alt POOLED_IMPACT POOLED_VARIANTS",
+		allele_count_regions->at(0)->chrom,
+		translate_coord(allele_count_regions->at(0)->start, CODEBASE_COORDS::start_base, BED_COORDS::start_base),
+		translate_coord(allele_count_regions->at(0)->end, CODEBASE_COORDS::end_base, BED_COORDS::end_base));
+
+	for (int i_s = 0; i_s < allele_count_sample_ids->size(); i_s++)
+	{
+		double ref_allele_cnt_so_far = 0;
+		double alt_allele_cnt_so_far = 0;
+		if (sscanf(per_sample_summarized_allele_count_strs->at(i_s), "%lf %lf", &ref_allele_cnt_so_far, &alt_allele_cnt_so_far) != 2)
+		{
+			fprintf(stderr, "Could not parse the allele counts (so far) for %d. sample: %s\n", i_s, per_sample_summarized_allele_count_strs->at(i_s));
+			exit(0);
+		}
+
+		fprintf(f_summarized_op, "\t%.0f %.0f", ref_allele_cnt_so_far - alt_allele_cnt_so_far, alt_allele_cnt_so_far);
+	} // i_s loop.
+
+	fprintf(f_summarized_op, "\n");
+	close_f(f_summarized_op, variant_level_summarized_allele_counts_op_fp);
+} // variant_set_summarize_variant_allele_counts
 
 
 void gene_level_summarize_annotated_variant_allele_counts_per_max_AF(char* annotated_per_variant_allelic_counts_BED_fp, double min_total_covg_per_summarized_var, char* gene_summarized_allele_counts_op_fp)

@@ -4021,6 +4021,11 @@ bool sort_regions_per_name(t_annot_region* region1, t_annot_region* region2)
 	return(t_string::sort_strings(region1->name, region2->name));
 }
 
+bool sort_regions_per_name_prefix(t_annot_region* region1, t_annot_region* region2)
+{
+	return(t_string::sort_strings_per_prefix(region1->name, region2->name));
+}
+
 // Necessary for fast comparison of the regions.
 bool sort_regions_per_start_end_name(t_annot_region* region1, t_annot_region* region2)
 {

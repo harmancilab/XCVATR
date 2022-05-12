@@ -62,6 +62,8 @@ Variant Annotation:\n\
 Variant Summarization:\n\
 	-gene_level_summarize_annotated_variant_allele_counts_per_max_AF\n\
 	-gene_level_summarize_annotated_variant_allele_counts_per_max_impact\n\
+	-variant_set_summarize_variant_allele_counts_per_max_AF\n\
+	-variant_set_summarize_variant_allele_counts_per_var_counts\n\
 COSMIC Data Processing:\n\
 	-extract_COSMIC_variants_alleles_from_VCF_per_var_starts\n\
 AF Clump Simulation:\n\
@@ -69,7 +71,9 @@ AF Clump Simulation:\n\
 Job Script Processing:\n\
 	-separate_write_job_scripts_per_cmd_list\n\
 Expression Count Matrix:\n\
-	-pool_normalize_per_chromosome_expression_matrices\n", argv[0]);
+	-pool_normalize_per_chromosome_expression_matrices\n\
+DropOut Analysis:\n\
+	-generate_dropout_matrix_per_CellRanger_mtx\n", argv[0]);
 
 		exit(0);
 	}
@@ -80,7 +84,206 @@ Expression Count Matrix:\n\
 	time_t start_t = time(NULL);
 
 
-	if (t_string::compare_strings(argv[1], "-preprocess_SAM_reads_per_file_per_preselected_chr"))
+	if (t_string::compare_strings(argv[1], "-generate_dropout_matrix_per_CellRanger_mtx"))
+	{
+		if (argc != 7)
+		{
+			fprintf(stderr, "USAGE: %s %s [Gene annotation regions BED pah] [CellRanger mtx path] [Barcodes path] [Features path] [DropOut matrix output path]\n", argv[0], argv[1]);
+			exit(0);
+		}
+
+		char* gene_annotations_bed_path = argv[2];
+		char* mtx_path = argv[3];
+		char* barcodes_path = argv[4];
+		char* features_path = argv[5];
+		char* dropout_op_path = argv[6];
+
+		vector<char*>* cell_bcs = buffer_file(barcodes_path);
+
+		fprintf(stderr, "Loading and parsing the feature id's.\n");
+		vector<char*>* raw_feats = buffer_file(features_path);
+		vector<char*>* feats = new vector<char*>();
+		for (int i_feat = 0; i_feat < raw_feats->size(); i_feat++)
+		{
+			char cur_feat_id[1000];
+			sscanf(raw_feats->at(i_feat), "%s", cur_feat_id);
+			feats->push_back(t_string::copy_me_str(cur_feat_id));
+
+			fprintf(stderr, "%s -> %s          \r", raw_feats->at(i_feat), cur_feat_id);
+		} // i_feat loop.
+
+		fprintf(stderr, "Loaded %d barcodes and %d features.\n", cell_bcs->size(), feats->size());
+
+		vector<t_annot_region*>* gene_regs = load_BED(gene_annotations_bed_path);
+
+		fprintf(stderr, "Matching features to gene regions and allocating the count matrix..\n");
+		sort(gene_regs->begin(), gene_regs->end(), sort_regions_per_name_prefix);
+		vector<char*>* sorted_gene_reg_names = new vector<char*>();
+		for (int i_reg = 0; i_reg < gene_regs->size(); i_reg++)
+		{
+			sorted_gene_reg_names->push_back(t_string::copy_me_str(gene_regs->at(i_reg)->name));
+		} // i_reg loop.
+
+		// Reset the data for all genes.
+		for (int i_reg = 0; i_reg < gene_regs->size(); i_reg++)
+		{
+			gene_regs->at(i_reg)->data = NULL;
+		} // i_reg loop.
+
+		fprintf(stderr, "Setting up matrix over %d loaded genes.\n", sorted_gene_reg_names->size());
+		vector<int>* per_feat_gene_reg_index = new vector<int>();
+		int n_gene_feat_matches = 0;
+		for (int i_feat = 0; i_feat < feats->size(); i_feat++)
+		{
+			int i_gene = t_string::fast_search_string_per_prefix(feats->at(i_feat), sorted_gene_reg_names, 0, sorted_gene_reg_names->size());
+
+			bool found_match = false;
+
+			while (i_gene > 0 &&
+				(
+					t_string::sort_strings_per_prefix(feats->at(i_feat), sorted_gene_reg_names->at(i_gene)) ||
+					t_string::compare_strings(feats->at(i_feat), sorted_gene_reg_names->at(i_gene))
+					)
+				)
+			{
+				i_gene--;
+			} // i_gene loop.
+
+			while (i_gene < sorted_gene_reg_names->size() &&
+				(
+					t_string::sort_strings_per_prefix(sorted_gene_reg_names->at(i_gene), feats->at(i_feat)) ||
+					t_string::compare_strings(feats->at(i_feat), sorted_gene_reg_names->at(i_gene))
+					)
+				)
+			{
+				if (t_string::compare_strings(feats->at(i_feat), sorted_gene_reg_names->at(i_gene)))
+				{
+					// Found match.
+					found_match = true;
+					break;
+				}
+
+				i_gene++;
+			} // i_gene loop.
+
+			// Sanity check on the identified gene.
+			if (found_match &&
+				!t_string::compare_strings(gene_regs->at(i_gene)->name, feats->at(i_feat)))
+			{
+				fprintf(stderr, "Sanity check failed @ %s/%s - %s\n",
+					feats->at(i_feat),
+					gene_regs->at(i_gene)->name, feats->at(i_feat));
+
+				exit(0);
+			}
+
+			if (found_match)
+			{
+				n_gene_feat_matches++;
+				double* cur_feat_cnts = new double[cell_bcs->size() + 2];
+				memset(cur_feat_cnts, 0, sizeof(double) * (cell_bcs->size() + 1));
+
+				gene_regs->at(i_gene)->data = cur_feat_cnts;
+				per_feat_gene_reg_index->push_back(i_gene);
+				gene_regs->at(i_gene)->score = i_feat;
+			}
+			else
+			{
+				per_feat_gene_reg_index->push_back(-1);
+			}
+		} // i_feat loop.
+
+		fprintf(stderr, "Found %d/%d gene-2-features matches.\n", n_gene_feat_matches, gene_regs->size());
+
+		fprintf(stderr, "Reading mtx file..\n");
+		FILE* f_mtx = open_f(mtx_path, "r");
+		while (1)
+		{
+			char* cur_line = getline(f_mtx);
+			if (cur_line == NULL)
+			{
+				break;
+			}
+
+			if (cur_line[0] == '%')
+			{
+				continue;
+			}
+
+			int feat_id = -1;
+			int cell_id = -1;
+			int cur_cnt = -1;
+			if (sscanf(cur_line, "%d %d %d", &feat_id, &cell_id, &cur_cnt) != 3)
+			{
+				fprintf(stderr, "Could not parse %s\n", cur_line);
+				exit(0);
+			}
+
+			if (feat_id <= 0 ||
+				cell_id <= 0 ||
+				cur_cnt <= 0)
+			{
+				fprintf(stderr, "Read invalid counts: %s\n", cur_line);
+				exit(0);
+			}
+
+			// Add this count.
+			if (per_feat_gene_reg_index->at(feat_id - 1) != -1)
+			{
+				int cur_feat_gene_id = per_feat_gene_reg_index->at(feat_id - 1);
+				double* cur_gene_cnts = (double*)(gene_regs->at(cur_feat_gene_id)->data);
+
+				if (cur_gene_cnts == NULL)
+				{
+					fprintf(stderr, "Could not match the array to the indices: %d\n", feat_id);
+					exit(0);
+				}
+				cur_gene_cnts[cell_id - 1] = (double)cur_cnt;
+			}
+		} // mtx reading loop.
+		close_f(f_mtx, mtx_path);
+
+		fprintf(stderr, "Saving dropout matrix to %s\n", dropout_op_path);
+		FILE* f_dropout = open_f(dropout_op_path, "w");
+
+		// Write header.
+		fprintf(f_dropout, "#CHROM\tSTART\tEND\tDROPOUT");
+		for (int i_cell = 0; i_cell < cell_bcs->size(); i_cell++)
+		{
+			fprintf(f_dropout, "\t%s", cell_bcs->at(i_cell));
+		} // i_cell loop.
+
+		fprintf(f_dropout, "\n");
+
+		// Generate dropout for the current set of genes.
+		fprintf(f_dropout, "Chrom\t1\t2\tDROPOUT");
+		for (int i_cell = 0; i_cell < cell_bcs->size(); i_cell++)
+		{
+			int cur_cell_n_dropouts = 0;
+			int n_used_genes = 0;
+			for (int i_g = 0; i_g < gene_regs->size(); i_g++)
+			{
+				double* cur_gene_cnts = (double*)(gene_regs->at(i_g)->data);
+
+				if (cur_gene_cnts != NULL)
+				{
+					if (cur_gene_cnts[i_cell] == 0)
+					{
+						cur_cell_n_dropouts++;
+					}
+					n_used_genes++;
+				}
+			} // i_g loop.
+
+			fprintf(f_dropout, "\t%d %d", n_used_genes - cur_cell_n_dropouts, cur_cell_n_dropouts);
+		} // i_cell loop.
+
+		fprintf(f_dropout, "\n");
+		close_f(f_dropout, dropout_op_path);
+
+		fprintf(stderr, "Done!\n");
+	} // -generate_dropout_matrix_per_CellRanger_mtx option.
+	else if (t_string::compare_strings(argv[1], "-preprocess_SAM_reads_per_file_per_preselected_chr"))
 	{
 		if (argc != 5)
 		{
@@ -1395,6 +1598,26 @@ cd $PBS_O_WORKDIR\n", vmem_size_in_gbs, q_name, walltime, n_cores);
 
 		generate_variant_score_matrix_per_pooled_variants(pooled_variants_file_path, sample_ids_list_fp, op_fp);
 	} // -generate_variant_score_matrix_per_pooled_variants option.
+	else if (t_string::compare_strings(argv[1], "-variant_set_summarize_variant_allele_counts_per_max_AF"))
+	{
+	if (argc != 6)
+	{
+		fprintf(stderr, "USAGE: %s %s [Per variant allele count regions BED file path (with ref/alt alleles in the name)] \
+[Filtering variant regions BED file path] \
+[Min. coverage per summarized variant] \
+[Output file path]\n", argv[0]);
+	}
+
+	char* per_variant_allelic_counts_BED_fp = argv[2];
+	char* filtering_var_regs_BED_fp = argv[3];
+	double min_total_covg_per_summarized_var = atof(argv[4]);
+	char* variant_level_summarized_allele_counts_op_fp = argv[5];
+
+	variant_set_summarize_variant_allele_counts_per_max_AF(per_variant_allelic_counts_BED_fp,
+		filtering_var_regs_BED_fp,
+		min_total_covg_per_summarized_var,
+		variant_level_summarized_allele_counts_op_fp);
+	} // -variant_set_summarize_variant_allele_counts_per_max_AF option.
 	else if (t_string::compare_strings(argv[1], "-gene_level_summarize_annotated_variant_allele_counts_per_max_AF"))
 	{
 		if (argc != 5)
@@ -1411,6 +1634,29 @@ cd $PBS_O_WORKDIR\n", vmem_size_in_gbs, q_name, walltime, n_cores);
 
 		gene_level_summarize_annotated_variant_allele_counts_per_max_AF(annotated_per_variant_allelic_counts_BED_fp, min_total_covg_per_summarized_var, gene_summarized_allele_counts_op_fp);
 	} // -gene_level_summarize_annotated_variant_allele_counts option.
+	else if (t_string::compare_strings(argv[1], "-variant_set_summarize_variant_allele_counts_per_var_counts"))
+	{
+		if (argc != 7)
+		{
+			fprintf(stderr, "USAGE: %s %s [Per variant allele count regions BED file path (with ref/alt alleles in the name)] \
+		[Filtering variant regions BED file path] \
+		[Min. coverage per summarized variant] \
+		[Min. alternate AF per counted variant] \
+		[Output file path]\n", argv[0], argv[1]);
+		}
+
+		char* per_variant_allelic_counts_BED_fp = argv[2];
+		char* filtering_var_regs_BED_fp = argv[3];
+		double min_total_covg_per_summarized_var = atof(argv[4]);
+		double min_alt_AF_per_counted_var = atof(argv[5]);
+		char* variant_level_summarized_allele_counts_op_fp = argv[6];
+
+		variant_set_summarize_variant_allele_counts_per_variant_count(per_variant_allelic_counts_BED_fp,
+			filtering_var_regs_BED_fp,
+			min_total_covg_per_summarized_var,
+			min_alt_AF_per_counted_var,
+			variant_level_summarized_allele_counts_op_fp);
+	} // -variant_set_summarize_variant_allele_counts_per_var_counts option.
 	else if (t_string::compare_strings(argv[1], "-gene_level_summarize_annotated_variant_allele_counts_per_max_impact"))
 	{
 		if (argc != 6)

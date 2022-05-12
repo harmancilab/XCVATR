@@ -5989,9 +5989,9 @@ void extract_summarize_indel_containing_read_blocks_per_SAM(char* SAM_fp, char* 
 
 		for (int i_block = 0; i_block < per_chr_indel_containing_read_blocks[i_chr]->size(); i_block++)
 		{
-			char empty_str = '.';
-			char* ref_allele = &empty_str;
-			char* alt_allele = &empty_str;
+			char empty_str[] = ".";
+			char* ref_allele = empty_str;
+			char* alt_allele = empty_str;
 
 			// Check for insert/delete.
 			if (per_chr_indel_containing_read_blocks[i_chr]->at(i_block)->score == VAR_TYPE_INSERTION)
