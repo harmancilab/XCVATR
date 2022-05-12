@@ -160,6 +160,38 @@ This command write scripts for running XCVATR on each scale separately. These ca
 
 Note that the results can be further filtered using the reported set of columns in the file named "filtered_summarized_vars.txt". Above command filters out the clumps minimum weighted AF of 0.05 and z-score threshold of 5
 
+## COSMIC Level Analysis and Visualization of Variants
+XCVATR can be used to pool the detected variants in COSMIC catalogue and visualize the collective effect of these variants.
+
+To perform COSMIC-level pooling analysis, we first get the variants that overlap with COSMIC variants and generate an expressed variant fraction for each cell:
+```
+./XCVATR_SC_SNV_Indel_Pipeline.sh -get_cosmic_variants
+./XCVATR_SC_SNV_Indel_Pipeline.sh -pool_COSMIC_variants_per_var_count cosmic_selected_snvs.txt ANNOTATED 5 0.2
+```
+
+Next, we smooth the frequencies:
+```
+# Smooth and plot.
+rm -f -r SMOOTHED_AFs
+./XCVATR_SC_SNV_Indel_Pipeline.sh -get_smoothed_AF_local_maxima 5 20 0
+./q_local_maxima_submission_script.csh
+./XCVATR_SC_SNV_Indel_Pipeline.sh -wait_for_jobs job.csh
+```
+
+Finally, these can be visualized using R scripts:
+```
+# Integrate the visualization scripts.
+gzip SMOOTHED_AFs/*.txt
+
+source data_config.params
+for cur_smoothed_AF in SMOOTHED_AFs/scale_*_smoothed_AF_counts.txt.gz
+do
+        ./visualize_smoothed_AFs_CLI.R $TSNE_COORDS_FP ${cur_smoothed_AF}
+        mv smoothed_AFs.pdf ${cur_smoothed_AF}.pdf
+done
+```
+
+
 ### Visualization
 Visualization makes use of the R scripts that are located under "Visualization_CLI/" directory. Note that it is necessary to have "Rscript" to be installed in the path of the user. Also, there are several packages that are necessary for visualizing datasets. These popular packages can be installed using:
 
