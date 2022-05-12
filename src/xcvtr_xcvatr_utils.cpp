@@ -4189,7 +4189,7 @@ exp_dist_weight);
 
 		for (int sample_i = 0; sample_i < spatial_coords_sample_ids->size(); sample_i++)
 		{
-			double n_smoothed_covg = 50;
+			double n_smoothed_covg = 50000;
 			int cur_alt_covg = (int)(smoothed_spatial_coord_mapped_per_sample_AF[sample_i] * n_smoothed_covg);
 			fprintf(f_smoothed_AF, "\t%d %d", (int)(n_smoothed_covg - cur_alt_covg), cur_alt_covg);
 		} // sample_i loop.
