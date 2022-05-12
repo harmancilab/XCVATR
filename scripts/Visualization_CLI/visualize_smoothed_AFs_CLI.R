@@ -2,7 +2,8 @@
 
 library('ggplot2');
 library('gridExtra');
-library(RColorBrewer);
+library(RColorBrewer)
+library(viridis)
 
 ##################################################################################################################
 # Clear the current variables.
@@ -14,7 +15,7 @@ args = commandArgs(trailingOnly=TRUE)
 
 if (length(args)!=2) 
 {
-  stop("USAGE: visualize_smoothed_AFs.R [Embedding coordinates file path (3 column tab-delimited with header)] [Smoothed counts matrix file path (gzip file)]", call.=FALSE);
+  stop("USAGE: visualize_smoothed_AFs.R [Embedding coordinates file path (3 column tab-delimited with header)] [Smoothed counts matrix file path]", call.=FALSE);
 }
 
 tsne_coords_fp <- args[1];
@@ -26,12 +27,12 @@ variant_allele_counts_fp <- args[2];
 ##################################################################################################################
 
 ##################################################################################################################
-# Set the current working directory before checking files.
+## Set the current working directory before checking files.
 #fn <- function(a){return(a+1);}
 #workdir <- getSrcDirectory(fn)[1];
 #setwd(workdir);
-##################################################################################################################
 
+##################################################################################################################
 print("Checking input files");
 if(!file.exists(tsne_coords_fp))
 {
@@ -60,7 +61,9 @@ tsne_sample_ids <- rownames(tsne_coords);
 trans_tsne_coords <- t(tsne_coords);
 
 # Load the variant allele counts data.
-raw_variant_allele_counts <- read.delim(gzfile(variant_allele_counts_fp), header=TRUE, stringsAsFactors = FALSE, check.names = FALSE);
+count_fp <- gzfile(variant_allele_counts_fp, 'rt');
+raw_variant_allele_counts <- read.delim(count_fp , header=TRUE, stringsAsFactors = FALSE, check.names = FALSE);
+close(count_fp);
 
 variant_allele_counts <- raw_variant_allele_counts[, -c(1,2,3,4)];
 variant_allale_sample_ids <- colnames(variant_allele_counts);
@@ -129,34 +132,33 @@ for(var_loci_i in 1:n_vars)
 	myPalette <- colorRampPalette((brewer.pal(9, "Reds")))
 	sc <- scale_colour_gradientn(colours = myPalette(100))
 											
-	AF_plots[[1]] <- ggplot(filt_AF_tsne_df, aes(x=tSNE_1, y=tSNE_2, color=alt_AF)) + 
-		scale_shape_manual(values = c(17, 16))+
-		geom_point(size=1, aes(alpha=alpha_val)) +
-	  scale_alpha_continuous(guide=FALSE, range = c(min_alpha, 1)) + 
-		labs(shape="Shape", color="AF") +
-		scale_color_gradient(low = "white", high = "red") +
-		ggtitle(sprintf("AF: %s", variant_loci[var_loci_i, 4]))+
-	  theme(panel.background = element_rect(fill = "lightgrey"),
-			title =element_text(size=8, face='bold'),
-			panel.border = element_blank(),
-			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"),
-			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"));
+    AF_plots[[1]] <- ggplot(filt_AF_tsne_df, aes(x=tSNE_1, y=tSNE_2, color=alt_AF)) +
+            scale_shape_manual(values = c(17, 16))+
+            geom_point(size=1, aes(alpha=alpha_val)) +
+        scale_alpha_continuous(guide='none', range = c(min_alpha, 1)) +
+            labs(shape="Shape", color="AF") +
+            scale_color_viridis()+
+            theme_bw()+
+            ggtitle(sprintf("AF: %s", variant_loci[var_loci_i, 4]));
+
+#         theme(panel.background = element_rect(fill = "lightgrey"),
+#                       title =element_text(size=8, face='bold'),
+#                       panel.border = element_blank(),
+#                       panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
+#                                                                                       colour = "grey"),
+#                       panel.grid.major = element_line(size = 0.1, linetype = 'solid',
+#                                                                                       colour = "grey"));
+
 
 	# Save the coverages plot.
-	AF_plots[[2]] <- ggplot(filt_covgs_df, aes(x=tSNE_1, y=tSNE_2, color=RD)) +
-		geom_point(size=1) +
-		labs(color="RD") +
-		scale_color_gradient(low = "white", high = "red") +
-		ggtitle(sprintf("Covgs: %s", variant_loci[var_loci_i, 4]))+
-		theme(panel.background = element_rect(fill = "lightgrey"),
-			title =element_text(size=8, face='bold'),
-			  panel.border = element_blank(),
-			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"),
-			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"));													
+	alt_AFs.t <- t(alt_AFs);
+	colnames(alt_AFs.t) <- 'alt_AF';
+	alt_AFs.t_df <- data.frame(alt_AFs.t);
+	AF_plots[[2]] <- ggplot(alt_AFs.t_df, aes(x=alt_AF))+geom_density()+
+	  theme_bw()+
+	  xlab("Embedding Smoothed Frequency")+ylab("Density")+
+	  theme(axis.title.x = element_text(size=12),
+	        axis.text = element_text(size=12));												
 
 	cur_var_AF_covg_plots <- marrangeGrob(AF_plots, nrow = 2, ncol = 1, top=NULL)
 	print(cur_var_AF_covg_plots);

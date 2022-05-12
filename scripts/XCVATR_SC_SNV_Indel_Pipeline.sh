@@ -83,6 +83,7 @@ Variant Filtering:
 Pool/Summarize Variants:
 	-gene_level_summarize_variants
 	-variant_level_pool_variants
+	-pool_COSMIC_variants_per_var_count
 Analyze allelic patterns:
 	-get_scales
 	-get_smoothed_AF_local_maxima
@@ -555,15 +556,60 @@ fi
 
 if [[ "$cmd_option" == "-copy_allelic_counts" ]]
 then
-	awk 'BEGIN{FS="\t"}{print $1}' ${RNA_BAM_SAMPLE_ID_LIST_FP} > sample_ids.list
+	#awk 'BEGIN{FS="\t"}{print $1}' ${RNA_BAM_SAMPLE_ID_LIST_FP} > sample_ids.list
 
-	rm -f temp_get_counts.sh
-	chrom_ids=`cat $ASSEMBLYID.list | awk {'print $1'}`
-	for cur_chrom in ${chrom_ids[@]}
-	do
-		echo "Copying "${cur_chrom}
-		cp ${allelic_count_dir}/counts_${cur_chrom}.txt.gz ${allelic_count_dir}/final_counts_${cur_chrom}.txt.gz
-	done
+	if [[ "$#" -ne 2 ]]
+	then
+		echo "USAGE: $0 $1 [Analysis Identifier: \"RAWCOUNT/ANNOTATED/dbSNP_filtered/IMPACT_filtered\"]"
+		exit
+	fi
+	
+	analysis_step=$2
+
+	echo "Copying the counts matrix from ${analysis_step}"
+
+	chrom_ids=`cat $ASSEMBLYID.list | awk {'if($2>40000000){print $1}'}`
+
+	if [[ "${analysis_step}" == "RAW_COUNT" ]]
+	then
+		echo "Copying raw counts to current counts."
+
+		for cur_chrom in ${chrom_ids[@]}
+		do
+			echo "Copying "${cur_chrom}
+			cp ${allelic_count_dir}/counts_${cur_chrom}.txt.gz ${allelic_count_dir}/final_counts_${cur_chrom}.txt.gz
+		done
+	elif [[ "${analysis_step}" == "ANNOTATED" ]]
+	then
+		echo "Copying annotated counts to current counts."
+
+		for cur_chrom in ${chrom_ids[@]}
+		do
+			echo "Copying "${cur_chrom}
+			cp ${allelic_count_dir}/counts_annotated_${cur_chrom}.txt.gz ${allelic_count_dir}/final_counts_${cur_chrom}.txt.gz
+		done
+	elif [[ "${analysis_step}" == "dbSNP_filtered" ]]
+	then
+		echo "Copying dbSNP filtered counts to current counts."
+
+		for cur_chrom in ${chrom_ids[@]}
+		do
+			echo "Copying "${cur_chrom}
+			cp ${allelic_count_dir}/counts_dbsnp_filtered_${cur_chrom}.txt.gz ${allelic_count_dir}/final_counts_${cur_chrom}.txt.gz
+		done
+	elif [[ "${analysis_step}" == "IMPACT_filtered" ]]
+	then
+		echo "Copying impact filtered counts to current counts."
+
+		for cur_chrom in ${chrom_ids[@]}
+		do
+			echo "Copying "${cur_chrom}
+			cp ${allelic_count_dir}/counts_impact_filtered_${cur_chrom}.txt.gz_damaging.txt.gz ${allelic_count_dir}/final_counts_${cur_chrom}.txt.gz
+		done
+	else
+		echo "Could not identify which counts to be copied: ${analysis_step}"
+		exit
+	fi
 
 	exit
 fi
@@ -772,6 +818,53 @@ then
 	
 	cp ${allelic_count_dir}/counts_variant_level_pooled.txt.gz ${allelic_count_dir}/final_counts.txt.gz
 	
+	exit
+fi
+
+if [[ "$cmd_option" == "-pool_COSMIC_variants_per_var_count" ]]
+then 
+	if [[ "$#" -ne 5 ]]
+	then
+		echo "USAGE: $0 $1 [COSMIC variants BED file path] [\"ANNOTATED\"/\"dbSNP_filtered\"] [Minimum read coverage per summarized variant] [Min. alternate AF per counted variant]"
+		exit
+	fi
+	
+	cosmic_vars_bed_fp=$2
+	var_set_selector=$3
+	min_read_support=$4
+	min_alt_AF_per_counted_var=$5
+
+	echo "COSMIC variant level pooling the annotated variants with variants in ${cosmic_vars_bed_fp} with minimum read support of ${min_read_support}."
+
+	chrom_ids=`cat $ASSEMBLYID.list | awk {'if(length($1)<3)print $1'}`
+	rm -f temp_pooled_counts.gz 
+	rm -f temp_merged_count_header.txt
+	for cur_chrom in ${chrom_ids[@]}
+	do		
+		if [[ "${var_set_selector}" == "ANNOTATED" ]]
+		then
+			echo "Pooling ${var_set_selector} variants on ${cur_chrom}" 
+			cat ALLELIC_COUNT/counts_annotated_${cur_chrom}.txt.gz | gzip -cd | grep -v CHROM | gzip >> temp_pooled_counts.gz
+			cat	ALLELIC_COUNT/counts_annotated_${cur_chrom}.txt.gz | gzip -cd | grep CHROM >> temp_merged_count_header.txt
+		elif [[ "${var_set_selector}" == "dbSNP_filtered" ]]
+		then
+			echo "Pooling ${var_set_selector} variants on ${cur_chrom}" 
+			cat ALLELIC_COUNT/counts_dbsnp_filtered_${cur_chrom}.txt.gz | gzip -cd | grep -v CHROM | gzip >> temp_pooled_counts.gz
+			cat ALLELIC_COUNT/counts_dbsnp_filtered_${cur_chrom}.txt.gz | gzip -cd | grep CHROM >> temp_merged_count_header.txt
+		else
+			echo "Could not determine which variants to be used for pooling: ${var_set_selector} ; Use \"ANNOTATED\" or \"dbSNP_filtered\""
+			exit
+		fi
+	done
+
+	sort -u temp_merged_count_header.txt | gzip > temp_merged_count_header.txt.gz
+	cat temp_merged_count_header.txt.gz temp_pooled_counts.gz > temp_pooled_counts.gz_w_header.txt.gz
+
+	XCVATR -variant_set_summarize_variant_allele_counts_per_var_counts temp_pooled_counts.gz_w_header.txt.gz ${cosmic_vars_bed_fp} ${min_read_support} ${min_alt_AF_per_counted_var} ${allelic_count_dir}/counts_cosmic_pooled.txt.gz
+
+	# Copy the final count matrix.
+	cp ${allelic_count_dir}/counts_cosmic_pooled.txt.gz ${allelic_count_dir}/final_counts.txt.gz
+
 	exit
 fi
 

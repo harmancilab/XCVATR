@@ -2,8 +2,10 @@
 
 library(ggplot2);
 library('gridExtra');
-library('ggforce');
-library(RColorBrewer);
+library('ggforce')
+library(RColorBrewer)
+library(viridis)
+
 
 ##################################################################################################################
 rm(list=ls());
@@ -48,6 +50,7 @@ metadata_fp <- args[6];
 #fn <- function(a){return(a+1);}
 #workdir <- getSrcDirectory(fn)[1];
 #setwd(workdir);
+
 ##################################################################################################################
 # Visualization parameters.
 z_score_cutoff <- 5;
@@ -162,7 +165,7 @@ for(amp_del in amp_del_indicator)
 		print(sprintf("Resetting the amp/del count matrix files %s,%s", variant_allele_counts_fp, scored_vars_fp));
 	}
 
-	# Load the scored variants.
+	# Load the scored variants.	
 	top_vars <- read.delim(scored_vars_fp, header=TRUE, stringsAsFactors = FALSE);
 	
 	# Check the number of scored variants.	
@@ -187,7 +190,9 @@ for(amp_del in amp_del_indicator)
 	trans_tsne_coords <- t(tsne_coords);
 
 	# Load the variant allele counts data.
-	raw_variant_allele_counts <- read.delim(gzfile(variant_allele_counts_fp), header=TRUE, stringsAsFactors = FALSE, check.names = FALSE);
+	count_fp <- gzfile(variant_allele_counts_fp, 'rt');
+	raw_variant_allele_counts <- read.delim(count_fp , header=TRUE, stringsAsFactors = FALSE, check.names = FALSE);
+	close(count_fp);
 
 	variant_allele_counts <- raw_variant_allele_counts[, -c(1,2,3,4)];
 	variant_allale_sample_ids <- colnames(variant_allele_counts);
@@ -298,35 +303,31 @@ for(amp_del in amp_del_indicator)
 		AF_plots[[1]] <- ggplot(filt_AF_tsne_df, aes(x=tSNE_1, y=tSNE_2, color=alt_AF, shape=shape_id)) + 
 		scale_shape_manual(values = c(17, 16))+
 		geom_point(size=1, aes(alpha=alpha_val)) +
-	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="blue", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+
+	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="red", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+
 	  geom_point(size=1, aes(x=tSNE_1, y=tSNE_2, color=alt_AF, shape=shape_id, alpha=alpha_val), inherit.aes=FALSE, data=non_zero_AF_tsne_df) +
-	  scale_alpha_continuous(guide=FALSE, range = c(min_alpha, 1)) + 
+	  scale_color_viridis()+
+		theme_bw()+
+	  scale_alpha_continuous(guide='none', range = c(min_alpha, 1)) + 
 		labs(shape="Shape", color="AF") +
-		scale_color_gradient(low = "white", high = "red") +
-		ggtitle(sprintf("AF: %s", variant_loci[var_loci_i, 4]))+
-	  theme(panel.background = element_rect(fill = "lightgrey"),
-			title =element_text(size=8, face='bold'),
-			panel.border = element_blank(),
-			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"),
-			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"));
+		#scale_color_gradient(low = "white", high = "red") +
+		ggtitle(sprintf("AF: %s", variant_loci[var_loci_i, 4]));
+#	  theme(panel.background = element_rect(fill = "lightgrey"),
+#			title =element_text(size=8, face='bold'),
+#			panel.border = element_blank(),
+#			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
+##											colour = "grey"),
+#			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
+#											colour = "grey"));
 
-	# Save the coverages plot.
-	AF_plots[[2]] <- ggplot(filt_covgs_df, aes(x=tSNE_1, y=tSNE_2, color=RD)) +
-		geom_point(size=1) +
-	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="blue", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+
-	  geom_point(size=1, aes(x=tSNE_1, y=tSNE_2, color=RD), inherit.aes=FALSE, data=non_zero_covgs_df) +
-		labs(color="RD") +
-		scale_color_gradient(low = "white", high = "red") +
-		ggtitle(sprintf("Covgs: %s", variant_loci[var_loci_i, 4]))+
-		theme(panel.background = element_rect(fill = "lightgrey"),
-			title =element_text(size=8, face='bold'),
-			  panel.border = element_blank(),
-			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"),
-			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"));					
+  	# Save the coverages plot.
+  	alt_AFs.t <- t(alt_AFs);
+  	colnames(alt_AFs.t) <- 'alt_AF';
+  	alt_AFs.t_df <- data.frame(alt_AFs.t);
+  	AF_plots[[2]] <- ggplot(alt_AFs.t_df, aes(x=alt_AF))+geom_histogram(binwidth = 0.3)+
+		  theme_bw()+
+		  xlab("CNV Frequency")+ylab("Frequency")+
+  		  theme(axis.title.x = element_text(size=12),
+  		        axis.text = element_text(size=12));
 
 		cur_var_AF_covg_plots <- marrangeGrob(AF_plots, nrow = 2, ncol = 1, top=NULL)
 		print(cur_var_AF_covg_plots);

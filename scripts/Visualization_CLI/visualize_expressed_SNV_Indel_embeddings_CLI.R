@@ -4,7 +4,9 @@ library(ggplot2);
 library('gridExtra');
 library('ggforce')
 library(stringr);
-library(RColorBrewer);
+library(RColorBrewer)
+library(viridis)
+
 
 ##################################################################################################################
 # Clear the current variables.
@@ -16,9 +18,9 @@ args = commandArgs(trailingOnly=TRUE)
 
 if (length(args) != 4) 
 {
-  stop("USAGE: visualize_expressed_CNV_embeddings.R [Embedding coordinates file path (3 column tab-delimited with header)] \
-[Scored deletions list file path] [Scored amplifications list file path] \
-[Variant Allele Counts file path (gzip file)] \
+  stop("USAGE: visualize_expressed_SNV_Indel_embeddings_CLI.R [Embedding coordinates file path (3 column tab-delimited with header)] \
+[Scored variants file path] \
+[Variant Allele Counts file path] \
 [Metadata file path]", call.=FALSE);
 }
 
@@ -43,9 +45,10 @@ min_exp_dist_weight <- 1/(10*10*10); # Absolute minimum
 
 ##################################################################################################################
 # Set the current working directory before checking files.
-##fn <- function(a){return(a+1);}
-##workdir <- getSrcDirectory(fn)[1];
-##setwd(workdir);
+#fn <- function(a){return(a+1);}
+#workdir <- getSrcDirectory(fn)[1];
+#setwd(workdir);
+
 ##################################################################################################################
 print("Checking input files");
 if(!file.exists(tsne_coords_fp))
@@ -142,7 +145,9 @@ tsne_sample_ids <- rownames(tsne_coords);
 trans_tsne_coords <- t(tsne_coords);
 
 # Load the variant allele counts data.
-raw_variant_allele_counts <- read.delim(gzfile(variant_allele_counts_fp), header=TRUE, stringsAsFactors = FALSE, check.names = FALSE);
+count_fp <- gzfile(variant_allele_counts_fp, 'rt');
+raw_variant_allele_counts <- read.delim(count_fp , header=TRUE, stringsAsFactors = FALSE, check.names = FALSE);
+close(count_fp);
 
 variant_allele_counts <- raw_variant_allele_counts[, -c(1,2,3,4)];
 variant_allale_sample_ids <- colnames(variant_allele_counts);
@@ -258,40 +263,45 @@ for(cur_uniq_var_i in 1:length(unique_var_names))
 
 	myPalette <- colorRampPalette((brewer.pal(9, "Reds")))
 	sc <- scale_colour_gradientn(colours = myPalette(100))
-											
+	
+	#plot(filt_covgs_df$RD, filt_AF_tsne_df$alt_AF);
 											
 	AF_plots[[1]] <- ggplot(filt_AF_tsne_df, aes(x=tSNE_1, y=tSNE_2, color=alt_AF, shape=shape_id)) + 
 		scale_shape_manual(values = c(17, 16))+
 		geom_point(size=1, aes(alpha=alpha_val)) +
-	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="blue", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+
-	  geom_point(size=1, aes(x=tSNE_1, y=tSNE_2, color=alt_AF, shape=shape_id, alpha=alpha_val), inherit.aes=FALSE, data=non_zero_AF_tsne_df) +
-	  scale_alpha_continuous(guide=FALSE, range = c(min_alpha, 1)) + 
+		geom_point(size=1, aes(x=tSNE_1, y=tSNE_2, color=alt_AF, shape=shape_id, alpha=alpha_val), inherit.aes=FALSE, data=non_zero_AF_tsne_df) +
+	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="red", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+	  
+	  scale_alpha_continuous(guide='none', range = c(min_alpha, 1)) + 
 		labs(shape="Shape", color="AF") +
-		scale_color_gradient(low = "white", high = "red") +
-		ggtitle(sprintf("AF: %s", variant_loci[var_loci_i, 4]))+
-	  theme(panel.background = element_rect(fill = "lightgrey"),
-			title =element_text(size=8, face='bold'),
-			panel.border = element_blank(),
-			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"),
-			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"));
+		scale_color_viridis()+
+		theme_bw()+
+		#scale_color_gradient(low = "white", high = "red") +
+		ggtitle(sprintf("AF: %s", variant_loci[var_loci_i, 4]));
+#	  theme(panel.background = element_rect(fill = "lightgrey"),
+#			title =element_text(size=8, face='bold'),
+#			panel.border = element_blank(),
+#			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
+#											colour = "grey"),
+#			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
+#											colour = "grey"));
 
 	# Save the coverages plot.
 	AF_plots[[2]] <- ggplot(filt_covgs_df, aes(x=tSNE_1, y=tSNE_2, color=RD)) +
-		geom_point(size=1) +
-	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="blue", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+
+		geom_point(size=1) +	  
 	  geom_point(size=1, aes(x=tSNE_1, y=tSNE_2, color=RD), inherit.aes=FALSE, data=non_zero_covgs_df) +
+	  geom_circle(aes(x0 = x0, y0 = y0, r = r), fill="blue", linetype='blank', size=0.01, alpha=0.2, inherit.aes=FALSE, data=center_circle_df)+
 		labs(color="RD") +
-		scale_color_gradient(low = "white", high = "red") +
-		ggtitle(sprintf("Covgs: %s", variant_loci[var_loci_i, 4]))+
-		theme(panel.background = element_rect(fill = "lightgrey"),
-			title =element_text(size=8, face='bold'),
-			  panel.border = element_blank(),
-			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"),
-			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
-											colour = "grey"));													
+		scale_color_viridis()+
+		theme_bw()+
+		#scale_color_gradient(low = "white", high = "red") +
+		ggtitle(sprintf("Covgs: %s", variant_loci[var_loci_i, 4]));
+#		theme(panel.background = element_rect(fill = "lightgrey"),
+#			title =element_text(size=8, face='bold'),
+#			  panel.border = element_blank(),
+#			panel.grid.minor = element_line(size = 0.1, linetype = 'solid',
+#											colour = "grey"),
+#			panel.grid.major = element_line(size = 0.1, linetype = 'solid',
+#											colour = "grey"));													
 
 	cur_var_AF_covg_plots <- marrangeGrob(AF_plots, nrow = 2, ncol = 1, top=NULL)
 	print(cur_var_AF_covg_plots);
