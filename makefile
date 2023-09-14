@@ -5,6 +5,7 @@ comp_flags = -c -Wall -O3
 exec_name = ../../bin/XCVATR
 lib_flags = -lz
 LIB_DIR = src
+LDFLAGS += -lz
 
 # Define pattern rule for building object files.
 %.o: %.cpp
